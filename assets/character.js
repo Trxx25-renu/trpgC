@@ -9,7 +9,6 @@
   const avatarImg = document.getElementById('avatarImg')
   const makeTokenBtn = document.getElementById('makeToken')
   const tokensEl = document.getElementById('tokens')
-  const downloadJsonBtn = document.getElementById('downloadJson')
   const copyJsonBtn = document.getElementById('copyJson')
 
   let data = null
@@ -20,6 +19,7 @@
       if(!res.ok) throw new Error('not found')
       const j = await res.json()
       data = j.kind === 'character' ? j.data : j
+      normalizeData()
       render()
     }catch(e){
       // fallback: try samples/alice.json
@@ -27,11 +27,39 @@
         const res2 = await fetch('samples/alice.json')
         const j2 = await res2.json()
         data = j2.kind === 'character' ? j2.data : j2
+        normalizeData()
         render()
       }catch(_){
         console.error('failed to load sample', e)
       }
     }
+  }
+
+  function normalizeData(){
+    if(!data) return
+    // ensure genso exists
+    if(typeof data.genso !== 'number') data.genso = 0
+
+    // normalize status: ensure 魔力 and 一時的魔力 exist
+    const hasM = Array.isArray(data.status) && data.status.some(s=>s.label==='魔力')
+    const hasT = Array.isArray(data.status) && data.status.some(s=>s.label==='一時的魔力')
+    if(!Array.isArray(data.status)) data.status = []
+    if(!hasM) data.status.unshift({label:'魔力', value:0, max:0})
+    if(!hasT) data.status.push({label:'一時的魔力', value:0, max:0})
+
+    // ensure numeric values
+    data.status = data.status.map(s=>({label:s.label, value:Number(s.value||0), max:Number(s.max||0)}))
+
+    // ensure grimoires array
+    if(!Array.isArray(data.grimoires)) data.grimoires = []
+    data.grimoires = data.grimoires.map(g=>({
+      id:g.id||('g'+Date.now()),
+      name_full:g.name_full||'',
+      name_kanji:g.name_kanji||'',
+      reading_kana:g.reading_kana||'',
+      effect_text:g.effect_text||'',
+      uses_current:Number(g.uses_current||0)
+    }))
   }
 
   function render(){
@@ -43,125 +71,64 @@
 
     // status
     statusListEl.innerHTML = ''
-    if(Array.isArray(data.status)){
-      data.status.forEach(s=>{
-        const d = document.createElement('div')
-        d.textContent = `${s.label ?? ''}: ${s.value ?? ''}`
-        statusListEl.appendChild(d)
-      })
-    }
+    data.status.forEach(s=>{
+      const d = document.createElement('div')
+      d.textContent = `${s.label}: ${s.value} / ${s.max}`
+      statusListEl.appendChild(d)
+    })
 
     // grimoires
     grimoiresEl.innerHTML = ''
-    if(Array.isArray(data.grimoires)){
-      data.grimoires.forEach(g=>{
-        const d = document.createElement('div')
-        d.innerHTML = `<b>${escapeHtml(g.name_kanji||g.name_full||'蔵書')}</b> <div class="muted">${escapeHtml(g.effect_text||'')}</div>`
-        grimoiresEl.appendChild(d)
-      })
-    }
+    data.grimoires.forEach(g=>{
+      const d = document.createElement('div')
+      d.innerHTML = `<b>${escapeHtml(g.name_kanji||g.name_full||'蔵書')}</b> <div class="muted">${escapeHtml(g.effect_text||'')}</div>`
+      grimoiresEl.appendChild(d)
+    })
   }
 
   function escapeHtml(s){return (s||'').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;')}
 
-  async function makeToken(){
-    // create 512x512 PNG from image (if available) or render name
-    const canvas = document.createElement('canvas')
-    canvas.width = 512; canvas.height = 512
-    const ctx = canvas.getContext('2d')
-    ctx.fillStyle = '#ffffff'
-    ctx.fillRect(0,0,512,512)
-
-    if(data && data.image){
-      try{
-        const img = await loadImage(data.image)
-        // fit and center
-        const iw = img.naturalWidth, ih = img.naturalHeight
-        const s = Math.min(iw, ih)
-        // draw scaled to fill 512
-        const sx = Math.max(0, (iw - s)/2)
-        const sy = Math.max(0, (ih - s)/2)
-        ctx.drawImage(img, sx, sy, s, s, 0, 0, 512, 512)
-      }catch(e){
-        drawFallback(ctx)
-      }
-    }else{
-      drawFallback(ctx)
+  function buildCocoJson(){
+    // Build a JSON structure suitable for ココフォリアのトークン作成に使える形式
+    // Each grimoire becomes an entry with current=0 and max = character.genso
+    const token = {
+      name: data.name || '',
+      initiative: data.initiative || 0,
+      status: data.status.map(s=>({label:s.label, current:Number(s.value||0), max:Number(s.max||0)})),
+      grimoires: data.grimoires.map(g=>({
+        id: g.id,
+        name: g.name_kanji || g.name_full || '',
+        reading: g.reading_kana || '',
+        effect: g.effect_text || '',
+        current: 0,
+        max: Number(data.genso || 0)
+      })),
+      meta: { source: 'trpgC', genso: Number(data.genso || 0) }
     }
-
-    canvas.toBlob(async (blob)=>{
-      if(!blob) return
-
-      // append to tokens area (preview)
-      const blobUrl = URL.createObjectURL(blob)
-      const imgEl = document.createElement('img')
-      imgEl.src = blobUrl
-      imgEl.width = 96; imgEl.height = 96
-      imgEl.draggable = true
-      imgEl.className = 'token-item'
-      imgEl.addEventListener('dragstart', (ev)=>{
-        try{ ev.dataTransfer.setData('text/uri-list', imgEl.src); ev.dataTransfer.setData('text/plain', imgEl.src) }catch(e){}
-      })
-      const wrap = document.createElement('div')
-      wrap.className = 'token-item'
-      wrap.appendChild(imgEl)
-      tokensEl.appendChild(wrap)
-
-      // copy PNG to clipboard only (no download)
-      try{
-        if(navigator.clipboard && navigator.clipboard.write){
-          const item = new ClipboardItem({'image/png': blob})
-          await navigator.clipboard.write([item])
-          alert('トークン画像をクリップボードにコピーしました')
-        }else{
-          alert('このブラウザでは画像のクリップボード書き込みがサポートされていません')
-        }
-      }catch(e){
-        console.warn('clipboard write failed', e)
-        alert('クリップボードへのコピーに失敗しました（CORSや権限が原因の可能性があります）')
-      }
-
-      // revoke blobUrl later to free memory
-      setTimeout(()=>{ URL.revokeObjectURL(blobUrl) }, 10000)
-
-    }, 'image/png')
+    return token
   }
 
-  function drawFallback(ctx){
-    // simple placeholder with name
-    ctx.fillStyle = '#2b6cf6'
-    ctx.fillRect(0,0,512,512)
-    ctx.fillStyle = '#fff'
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'middle'
-    ctx.font = '40px sans-serif'
-    ctx.fillText((data && data.name) ? data.name : '無名', 256, 256)
-  }
-
-  function loadImage(src){
-    return new Promise((resolve,reject)=>{
-      const img = new Image()
-      // allow CORS data URLs and same-origin; if external URL blocks CORS, drawImage may taint canvas
-      img.crossOrigin = 'anonymous'
-      img.onload = ()=>resolve(img)
-      img.onerror = reject
-      img.src = src
-    })
-  }
-
-  downloadJsonBtn.addEventListener('click', ()=>{
+  async function copyCocoJson(){
     if(!data) return
-    const txt = JSON.stringify({kind:'character',data},null,2)
-    const blob = new Blob([txt],{type:'application/json'})
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a'); a.href = url; a.download = (data.name||'character') + '.json'; a.click(); URL.revokeObjectURL(url)
-  })
+    const coco = buildCocoJson()
+    const text = JSON.stringify(coco, null, 2)
+    // show preview
+    tokensEl.textContent = text
+    try{
+      await navigator.clipboard.writeText(text)
+      alert('ココフォリア用JSONをクリップボードにコピーしました')
+    }catch(e){
+      console.warn('clipboard write failed', e)
+      alert('クリップボードへのコピーに失敗しました。ページ上のプレビューをコピーしてください。')
+    }
+  }
+
   copyJsonBtn.addEventListener('click', async ()=>{
     if(!data) return
-    try{ await navigator.clipboard.writeText(JSON.stringify({kind:'character',data},null,2)); alert('JSON をコピーしました') }catch(e){ alert('クリップボードにコピーできませんでした') }
+    try{ await navigator.clipboard.writeText(JSON.stringify({kind:'character',data},null,2)); alert('キャラJSONをコピーしました') }catch(e){ alert('クリップボードにコピーできませんでした') }
   })
 
-  makeTokenBtn.addEventListener('click', makeToken)
+  makeTokenBtn.addEventListener('click', copyCocoJson)
 
   load()
 })();

@@ -15,9 +15,10 @@
     .labels b{display:inline-block;width:120px}
     .grimoires{margin-top:12px}
     .token-actions{margin-top:12px;display:flex;gap:8px}
-    #tokens{margin-top:16px;display:flex;gap:8px;flex-wrap:wrap}
+    #tokens{margin-top:16px;display:block}
     .token-item{width:96px;height:96px;border:1px solid #ddd;border-radius:6px;overflow:hidden;display:flex;align-items:center;justify-content:center}
     .muted{color:#6b7280}
+    pre.json-output{background:#0b1220;color:#dff0ff;padding:12px;border-radius:6px;max-height:300px;overflow:auto}
   </style>
 </head>
 <body>
@@ -34,16 +35,15 @@
           <div class="labels"><b>ステータス</b><div id="statusList"></div></div>
           <div class="grimoires"><b>蔵書</b><div id="grimoires"></div></div>
           <div class="token-actions">
-            <button id="makeToken">キャラクターコマを作成</button>
-            <button id="downloadJson">JSONをダウンロード</button>
-            <button id="copyJson">JSONをコピー</button>
+            <button id="makeToken">ココフォリア用コマ(JSON)をコピー</button>
+            <button id="copyJson">キャラJSONをコピー</button>
           </div>
-          <div class="muted" style="margin-top:8px">生成したトークンは下に追加されます。ドラッグでキャンバス等に移動できます（ブラウザ依存）。</div>
+          <div class="muted" style="margin-top:8px">「ココフォリア用コマ」は画像を作らず、ココフォリアに貼るためのJSONをクリップボードにコピーします。</div>
         </div>
       </div>
       <section>
-        <h3>生成されたトークン</h3>
-        <div id="tokens" aria-live="polite"></div>
+        <h3>生成プレビュー（JSON）</h3>
+        <pre id="tokens" class="json-output" aria-live="polite"></pre>
       </section>
     </div>
   </main>
