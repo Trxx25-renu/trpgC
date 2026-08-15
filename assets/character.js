@@ -91,17 +91,11 @@
 
     canvas.toBlob(async (blob)=>{
       if(!blob) return
-      // download
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = (data && data.name ? data.name : 'token') + '.png'
-      a.click()
-      URL.revokeObjectURL(url)
 
-      // append to tokens area
+      // append to tokens area (preview)
+      const blobUrl = URL.createObjectURL(blob)
       const imgEl = document.createElement('img')
-      imgEl.src = URL.createObjectURL(blob)
+      imgEl.src = blobUrl
       imgEl.width = 96; imgEl.height = 96
       imgEl.draggable = true
       imgEl.className = 'token-item'
@@ -113,16 +107,22 @@
       wrap.appendChild(imgEl)
       tokensEl.appendChild(wrap)
 
-      // try copy to clipboard
+      // copy PNG to clipboard only (no download)
       try{
         if(navigator.clipboard && navigator.clipboard.write){
           const item = new ClipboardItem({'image/png': blob})
           await navigator.clipboard.write([item])
-          alert('トークンをコピーしました（クリップボード）')
+          alert('トークン画像をクリップボードにコピーしました')
+        }else{
+          alert('このブラウザでは画像のクリップボード書き込みがサポートされていません')
         }
       }catch(e){
-        // ignore
+        console.warn('clipboard write failed', e)
+        alert('クリップボードへのコピーに失敗しました（CORSや権限が原因の可能性があります）')
       }
+
+      // revoke blobUrl later to free memory
+      setTimeout(()=>{ URL.revokeObjectURL(blobUrl) }, 10000)
 
     }, 'image/png')
   }
